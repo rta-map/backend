@@ -6,16 +6,17 @@ from sqlalchemy.orm import Session
 from schemas import AccidentProperties, ClusterProperties, Feature, FeatureCollection, Point
 
 
-def get_cell_size(zoom: int) -> Optional[float]:
-    if zoom >= 14:
+def get_cell_size(min_lat: float, max_lat: float, min_lon: float, max_lon: float) -> Optional[float]:
+    span = max(max_lat - min_lat, max_lon - min_lon)
+    if span < 0.1:
         return None
-    elif zoom >= 12:
+    elif span < 0.5:
         return 0.01
-    elif zoom >= 10:
+    elif span < 1.5:
         return 0.05
-    elif zoom >= 8:
+    elif span < 4.0:
         return 0.2
-    elif zoom >= 6:
+    elif span < 15.0:
         return 1.0
     else:
         return 5.0

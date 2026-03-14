@@ -16,13 +16,12 @@ def get_accidents(
     max_lat: float,
     min_lon: float,
     max_lon: float,
-    zoom: int,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     accident_type: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    cell_size = get_cell_size(zoom)
+    cell_size = get_cell_size(min_lat, max_lat, min_lon, max_lon)
     if cell_size is None:
         return query_individual(db, min_lat, max_lat, min_lon, max_lon, date_from, date_to, accident_type)
     return query_clustered(db, min_lat, max_lat, min_lon, max_lon, cell_size, date_from, date_to, accident_type)
