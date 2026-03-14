@@ -22,7 +22,7 @@ def get_cell_size(zoom: int) -> Optional[float]:
 
 
 def _filters(date_from, date_to, accident_type) -> tuple[str, dict]:
-    clauses = []
+    clauses = ["geo_precision NOT IN ('city', 'highway')"]
     params = {}
     if date_from is not None:
         clauses.append("date >= :date_from")
