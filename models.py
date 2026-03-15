@@ -24,6 +24,8 @@ class Accident(Base):
     geo_precision = Column(Text)
     lat = Column(Float, nullable=False)
     lon = Column(Float, nullable=False)
+    road_snapped = Column(Boolean, default=False)
+    geo_informal = Column(Boolean, default=False)
 
     __table_args__ = (
         Index("ix_accidents_lat_lon", "lat", "lon"),

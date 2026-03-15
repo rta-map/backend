@@ -3,27 +3,11 @@ from typing import List, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from schemas import AccidentProperties, ClusterProperties, Feature, FeatureCollection, Point
+from schemas import AccidentProperties, Feature, FeatureCollection, Point
 
 
-def get_cell_size(min_lat: float, max_lat: float, min_lon: float, max_lon: float) -> Optional[float]:
-    span = max(max_lat - min_lat, max_lon - min_lon)
-    if span < 0.1:
-        return None
-    elif span < 0.5:
-        return 0.01
-    elif span < 1.5:
-        return 0.05
-    elif span < 4.0:
-        return 0.2
-    elif span < 15.0:
-        return 1.0
-    else:
-        return 5.0
-
-
-def _filters(date_from, date_to, accident_type) -> tuple[str, dict]:
-    clauses = ["geo_precision NOT IN ('city', 'highway')"]
+def _filters(date_from, date_to, accident_type, only_dead) -> tuple[str, dict]:
+    clauses = ["geo_precision NOT IN ('city', 'highway')", "place IS NOT NULL", "place != ''", "geo_informal IS NOT 1"]
     params = {}
     if date_from is not None:
         clauses.append("date >= :date_from")
@@ -34,84 +18,19 @@ def _filters(date_from, date_to, accident_type) -> tuple[str, dict]:
     if accident_type is not None:
         clauses.append("accident_type = :accident_type")
         params["accident_type"] = accident_type
+    if only_dead:
+        clauses.append("dead > 0")
     return (" AND " + " AND ".join(clauses)) if clauses else "", params
 
 
-def query_clustered(
+def query_all(
     db: Session,
-    min_lat: float,
-    max_lat: float,
-    min_lon: float,
-    max_lon: float,
-    cell_size: float,
     date_from: Optional[str],
     date_to: Optional[str],
     accident_type: Optional[str],
+    only_dead: bool = False,
 ) -> FeatureCollection:
-    extra_sql, params = _filters(date_from, date_to, accident_type)
-    params.update(
-        {
-            "min_lat": min_lat,
-            "max_lat": max_lat,
-            "min_lon": min_lon,
-            "max_lon": max_lon,
-            "cell": cell_size,
-        }
-    )
-
-    sql = text(
-        f"""
-        SELECT
-            ROUND(lat / :cell) * :cell AS cell_lat,
-            ROUND(lon / :cell) * :cell AS cell_lon,
-            AVG(lat) AS avg_lat,
-            AVG(lon) AS avg_lon,
-            COUNT(*) AS cnt,
-            SUM(COALESCE(dead, 0)) AS total_dead,
-            SUM(COALESCE(injured, 0)) AS total_injured
-        FROM accidents
-        WHERE lat BETWEEN :min_lat AND :max_lat
-          AND lon BETWEEN :min_lon AND :max_lon
-          {extra_sql}
-        GROUP BY cell_lat, cell_lon
-        """
-    )
-
-    rows = db.execute(sql, params).fetchall()
-    features: List[Feature] = []
-    for row in rows:
-        features.append(
-            Feature(
-                geometry=Point(coordinates=[row.avg_lon, row.avg_lat]),
-                properties=ClusterProperties(
-                    count=row.cnt,
-                    dead=row.total_dead,
-                    injured=row.total_injured,
-                ),
-            )
-        )
-    return FeatureCollection(features=features)
-
-
-def query_individual(
-    db: Session,
-    min_lat: float,
-    max_lat: float,
-    min_lon: float,
-    max_lon: float,
-    date_from: Optional[str],
-    date_to: Optional[str],
-    accident_type: Optional[str],
-) -> FeatureCollection:
-    extra_sql, params = _filters(date_from, date_to, accident_type)
-    params.update(
-        {
-            "min_lat": min_lat,
-            "max_lat": max_lat,
-            "min_lon": min_lon,
-            "max_lon": max_lon,
-        }
-    )
+    extra_sql, params = _filters(date_from, date_to, accident_type, only_dead)
 
     sql = text(
         f"""
@@ -119,12 +38,10 @@ def query_individual(
             lat, lon, date, accident_type,
             COALESCE(dead, 0) AS dead,
             COALESCE(injured, 0) AS injured,
-            city, district, street, is_highway
+            city, district, street, place, is_highway
         FROM accidents
-        WHERE lat BETWEEN :min_lat AND :max_lat
-          AND lon BETWEEN :min_lon AND :max_lon
+        WHERE 1=1
           {extra_sql}
-        LIMIT 2000
         """
     )
 
@@ -142,6 +59,7 @@ def query_individual(
                     city=row.city,
                     district=row.district,
                     street=row.street,
+                    place=row.place,
                     is_highway=bool(row.is_highway) if row.is_highway is not None else None,
                 ),
             )
